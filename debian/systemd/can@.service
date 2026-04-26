@@ -1,0 +1,15 @@
+[Unit]
+Description=GOcontroll CAN interface %i
+BindsTo=sys-subsystem-net-devices-%i.device
+After=sys-subsystem-net-devices-%i.device
+PartOf=can-setup.target
+ConditionPathExists=/etc/gocontroll/can.d/%i.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/go-can apply %i
+ExecStop=/usr/sbin/ip link set %i down
+
+[Install]
+WantedBy=can-setup.target

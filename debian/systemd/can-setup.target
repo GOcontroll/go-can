@@ -1,0 +1,9 @@
+[Unit]
+Description=All GOcontroll CAN interfaces configured and up
+# Wants= a fixed superset (can0..can3). Non-existent ones are no-ops via
+# ConditionPathExists= in the can@.service template — M1/HMI1 (2× CAN)
+# simply won't have can2/can3 conf files, so those instance services skip.
+Wants=can@can0.service can@can1.service can@can2.service can@can3.service
+
+[Install]
+WantedBy=multi-user.target

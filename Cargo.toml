@@ -1,0 +1,27 @@
+[package]
+name = "go-can"
+version = "0.1.0"
+edition = "2021"
+authors = ["GOcontroll B.V. <info@gocontroll.com>"]
+description = "GOcontroll CAN interface configuration tool"
+license = "MIT"
+repository = "https://github.com/GOcontroll/go-can"
+readme = "README.md"
+
+[[bin]]
+name = "go-can"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+anyhow = "1.0"
+
+[profile.release]
+opt-level = "z"        # optimize for size — boot-path, smaller is faster cold-start
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

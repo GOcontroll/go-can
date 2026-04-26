@@ -1,0 +1,150 @@
+name: Build and publish go-can package
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Install cross-compile + dpkg-dev deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            dpkg-dev \
+            gcc-aarch64-linux-gnu \
+            libc6-dev-arm64-cross
+
+      - name: Cargo cross-build (release, arm64)
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: |
+          cargo build --release --target aarch64-unknown-linux-gnu
+
+      - name: Build .deb
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          PACKAGE=go-can
+          ARCH=arm64
+          BUILD="${RUNNER_TEMP}/${PACKAGE}_${VERSION}_${ARCH}"
+          DIST="${RUNNER_TEMP}/dist"
+
+          mkdir -p "${BUILD}/DEBIAN" \
+                   "${BUILD}/usr/bin" \
+                   "${BUILD}/usr/lib/systemd/system" \
+                   "${BUILD}/etc/gocontroll/can.d" \
+                   "${DIST}"
+
+          # --- Files --------------------------------------------------------
+          install -Dm755 target/aarch64-unknown-linux-gnu/release/go-can \
+            "${BUILD}/usr/bin/go-can"
+          install -Dm644 debian/systemd/can@.service \
+            "${BUILD}/usr/lib/systemd/system/can@.service"
+          install -Dm644 debian/systemd/can-setup.target \
+            "${BUILD}/usr/lib/systemd/system/can-setup.target"
+
+          # /etc/gocontroll/can.d/ stays empty at install time;
+          # firstboot-baseboard.service writes per-baseboard defaults at first boot.
+
+          # --- DEBIAN/control -----------------------------------------------
+          cat > "${BUILD}/DEBIAN/control" << CONTROL
+          Package: ${PACKAGE}
+          Version: ${VERSION}
+          Architecture: ${ARCH}
+          Maintainer: GOcontroll B.V. <info@gocontroll.com>
+          Section: misc
+          Priority: optional
+          Depends: iproute2
+          Recommends: can-utils
+          Homepage: https://gocontroll.com
+          Description: GOcontroll CAN interface configuration tool and systemd integration
+           Provides the go-can CLI for configuring SocketCAN interfaces on
+           GOcontroll Moduline controllers (L4, M1, HMI1), plus a systemd
+           template (can@.service) and aggregation target (can-setup.target)
+           that bring up CAN interfaces on boot from /etc/gocontroll/can.d/.
+           Stable JSON output schema for MCP-server and provisioning use.
+          CONTROL
+
+          # --- DEBIAN/postinst ----------------------------------------------
+          cat > "${BUILD}/DEBIAN/postinst" << 'POSTINST'
+          #!/bin/bash
+          set -e
+          case "$1" in
+              configure)
+                  systemctl daemon-reload
+                  systemctl enable can-setup.target || true
+                  # Don't auto-start: chroot at install time has no kernel CAN devices,
+                  # and on real hardware firstboot-baseboard.service starts it.
+                  ;;
+          esac
+          POSTINST
+          chmod 755 "${BUILD}/DEBIAN/postinst"
+
+          # --- DEBIAN/prerm -------------------------------------------------
+          cat > "${BUILD}/DEBIAN/prerm" << 'PRERM'
+          #!/bin/bash
+          set -e
+          case "$1" in
+              remove|purge)
+                  systemctl stop can-setup.target || true
+                  systemctl disable can-setup.target || true
+                  for i in 0 1 2 3; do
+                      systemctl stop "can@can${i}.service" || true
+                  done
+                  ;;
+          esac
+          PRERM
+          chmod 755 "${BUILD}/DEBIAN/prerm"
+
+          # --- DEBIAN/postrm ------------------------------------------------
+          cat > "${BUILD}/DEBIAN/postrm" << 'POSTRM'
+          #!/bin/bash
+          set -e
+          case "$1" in
+              purge)
+                  rm -rf /etc/gocontroll/can.d
+                  systemctl daemon-reload || true
+                  ;;
+          esac
+          POSTRM
+          chmod 755 "${BUILD}/DEBIAN/postrm"
+
+          # --- Build --------------------------------------------------------
+          dpkg-deb -Zxz --build --root-owner-group "${BUILD}" \
+            "${DIST}/${PACKAGE}_${VERSION}_${ARCH}.deb"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ runner.temp }}/dist/go-can_${{ steps.version.outputs.version }}_arm64.deb
+          generate_release_notes: true
+
+      - name: Trigger go-apt index rebuild
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.APT_DISPATCH_TOKEN }}
+          repository: GOcontroll/go-apt
+          event-type: rebuild-index
+          client-payload: |
+            {
+              "package": "go-can",
+              "version": "${{ steps.version.outputs.version }}",
+              "arch": "arm64",
+              "deb_url": "https://github.com/GOcontroll/go-can/releases/download/${{ github.ref_name }}/go-can_${{ steps.version.outputs.version }}_arm64.deb"
+            }
