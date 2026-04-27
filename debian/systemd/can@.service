@@ -1,7 +1,14 @@
 [Unit]
 Description=GOcontroll CAN interface %i
+# DefaultDependencies=no schrapt de impliciete After=basic.target keten,
+# zodat de service kan vuren zodra de netdev verschijnt (typisch ~100-500ms
+# post-kernel-start) i.p.v. te wachten tot basic.target ready is (~2.3s).
+# BindsTo + After op de device-unit blijft het echte trigger-event.
+DefaultDependencies=no
 BindsTo=sys-subsystem-net-devices-%i.device
 After=sys-subsystem-net-devices-%i.device
+Before=basic.target shutdown.target
+Conflicts=shutdown.target
 PartOf=can-setup.target
 ConditionPathExists=/etc/gocontroll/can.d/%i.conf
 
