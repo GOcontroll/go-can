@@ -14,6 +14,7 @@ mod defaults;
 mod error;
 mod netlink;
 mod output;
+mod tui;
 
 use cli::{Cli, Command};
 use error::Error;
@@ -67,6 +68,9 @@ fn run(cli: Cli) -> Result<(), Error> {
         }
         Command::Reset { iface } => {
             cli::handle_reset(&iface, quiet)?;
+        }
+        Command::Tui => {
+            tui::run()?;
         }
     }
     Ok(())

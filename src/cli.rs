@@ -71,6 +71,9 @@ pub enum Command {
         /// Interface name, e.g. can0.
         iface: String,
     },
+
+    /// Interactive TUI — browse and configure CAN interfaces with arrow keys.
+    Tui,
 }
 
 pub fn handle_set(iface: &str, key: &str, value: &str, quiet: bool) -> Result<(), Error> {
