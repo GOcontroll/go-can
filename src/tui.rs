@@ -193,8 +193,8 @@ fn draw(
 
     queue!(
         stdout,
-        SetForegroundColor(Color::White),
-        Print("  go-can  \u{2014}  CAN Interface Configuration\r\n"),
+        SetForegroundColor(Color::Rgb { r: 255, g: 102, b: 0 }),
+        Print(concat!("  GOcontroll Moduline CAN tool  v", env!("CARGO_PKG_VERSION"), "\r\n")),
         ResetColor,
         Print(format!("  Baseboard: {}\r\n\r\n", baseboard)),
     )?;
