@@ -1,6 +1,6 @@
 [package]
 name = "go-can"
-version = "0.1.0"
+version = "0.1.7"
 edition = "2021"
 authors = ["GOcontroll B.V. <info@gocontroll.com>"]
 description = "GOcontroll CAN interface configuration tool"

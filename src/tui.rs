@@ -21,6 +21,8 @@ const BITRATES: &[(u32, &str)] = &[
     (1_000_000, "1000 kbps"),
 ];
 
+const SEP: &str = "  ------------------------------------\r\n";
+
 struct Bus {
     name: String,
     /// Bitrate from config file, or detected live from running interface.
@@ -46,8 +48,6 @@ pub fn run() -> Result<(), Error> {
         .iter()
         .filter(|i| i.present)
         .map(|i| {
-            // Prefer the config file; fall back to the live interface for controllers
-            // that were configured via the old /etc/network/interfaces.d/ mechanism.
             let bitrate = config::load(&i.name)
                 .ok()
                 .map(|c| c.bitrate)
@@ -76,7 +76,6 @@ pub fn run() -> Result<(), Error> {
 }
 
 /// Read the live bitrate of a running CAN interface by parsing `ip -details link show`.
-/// Returns None if the interface is down or the bitrate cannot be determined.
 fn read_live_bitrate(iface: &str) -> Option<u32> {
     let out = Proc::new("ip")
         .args(["-details", "link", "show", iface])
@@ -86,8 +85,6 @@ fn read_live_bitrate(iface: &str) -> Option<u32> {
         return None;
     }
     let text = String::from_utf8_lossy(&out.stdout);
-    // Output contains a line like: "      bitrate 500000 sample-point 0.875"
-    // Walk word-by-word and return the u32 after the first "bitrate" token.
     let mut iter = text.split_whitespace();
     while let Some(word) = iter.next() {
         if word == "bitrate" {
@@ -128,15 +125,11 @@ fn handle_key(key: KeyCode, mode: Mode, buses: &mut Vec<Bus>) -> Action {
     match mode {
         Mode::List { mut cursor } => match key {
             KeyCode::Up => {
-                if cursor > 0 {
-                    cursor -= 1;
-                }
+                if cursor > 0 { cursor -= 1; }
                 Action::Update(Mode::List { cursor })
             }
             KeyCode::Down => {
-                if cursor + 1 < buses.len() {
-                    cursor += 1;
-                }
+                if cursor + 1 < buses.len() { cursor += 1; }
                 Action::Update(Mode::List { cursor })
             }
             KeyCode::Enter => {
@@ -149,15 +142,11 @@ fn handle_key(key: KeyCode, mode: Mode, buses: &mut Vec<Bus>) -> Action {
 
         Mode::Bitrate { bus, mut cursor, .. } => match key {
             KeyCode::Up => {
-                if cursor > 0 {
-                    cursor -= 1;
-                }
+                if cursor > 0 { cursor -= 1; }
                 Action::Update(Mode::Bitrate { bus, cursor, error: None })
             }
             KeyCode::Down => {
-                if cursor + 1 < BITRATES.len() {
-                    cursor += 1;
-                }
+                if cursor + 1 < BITRATES.len() { cursor += 1; }
                 Action::Update(Mode::Bitrate { bus, cursor, error: None })
             }
             KeyCode::Enter => {
@@ -191,14 +180,18 @@ fn draw(
 ) -> Result<(), Error> {
     queue!(stdout, cursor::MoveTo(0, 0), terminal::Clear(ClearType::All))?;
 
+    // Header
     queue!(
         stdout,
         SetForegroundColor(Color::Rgb { r: 255, g: 102, b: 0 }),
         Print(concat!("  GOcontroll Moduline CAN tool  v", env!("CARGO_PKG_VERSION"), "\r\n")),
         ResetColor,
-        Print(format!("  Controller: Moduline {}\r\n\r\n", baseboard)),
     )?;
+    queue!(stdout, Print(SEP))?;
+    queue!(stdout, Print(format!("  Controller: Moduline {}\r\n", baseboard)))?;
+    queue!(stdout, Print(SEP))?;
 
+    // Content
     match mode {
         Mode::List { cursor } => draw_list(stdout, buses, *cursor)?,
         Mode::Bitrate { bus, cursor, error } => {
@@ -212,36 +205,42 @@ fn draw(
 
 fn draw_list(stdout: &mut impl Write, buses: &[Bus], cursor: usize) -> Result<(), Error> {
     for (i, bus) in buses.iter().enumerate() {
-        if i == cursor {
-            queue!(stdout, SetForegroundColor(Color::Cyan), Print("  \u{25ba} "), ResetColor)?;
+        let selected = i == cursor;
+        if selected {
+            queue!(stdout, SetForegroundColor(Color::Cyan), Print("  \u{25ba} "))?;
         } else {
-            queue!(stdout, Print("    "))?;
+            queue!(stdout, ResetColor, Print("    "))?;
         }
 
-        queue!(stdout, Print(format!("{:<6}  ", bus.name)))?;
+        queue!(stdout, Print(format!("{:<8}", bus.name)))?;
 
-        match bus.bitrate {
-            Some(br) => queue!(
-                stdout,
-                SetForegroundColor(Color::Green),
-                Print(format!("{:<14}", fmt_bitrate(br))),
-                ResetColor,
-            )?,
-            None => queue!(
-                stdout,
-                SetForegroundColor(Color::DarkGrey),
-                Print(format!("{:<14}", "unconfigured")),
-                ResetColor,
-            )?,
+        if selected {
+            let br = bus.bitrate.map(fmt_bitrate).unwrap_or_else(|| "unconfigured".into());
+            queue!(stdout, Print(format!("{:<16}", br)))?;
+        } else {
+            match bus.bitrate {
+                Some(br) => queue!(
+                    stdout,
+                    SetForegroundColor(Color::Green),
+                    Print(format!("{:<16}", fmt_bitrate(br))),
+                    ResetColor,
+                )?,
+                None => queue!(
+                    stdout,
+                    SetForegroundColor(Color::DarkGrey),
+                    Print(format!("{:<16}", "unconfigured")),
+                    ResetColor,
+                )?,
+            }
         }
 
         let status = if bus.up { "up" } else { "down" };
-        queue!(stdout, Print(format!("  {}\r\n", status)))?;
+        queue!(stdout, ResetColor, Print(format!("{}\r\n", status)))?;
     }
 
+    queue!(stdout, Print(SEP))?;
     queue!(
         stdout,
-        Print("\r\n"),
         SetForegroundColor(Color::DarkGrey),
         Print("  \u{2191}/\u{2193} navigate   Enter select bitrate   q quit\r\n"),
         ResetColor,
@@ -261,24 +260,26 @@ fn draw_bitrate(
     queue!(stdout, Print(format!("  {}  \u{2014}  Select Bitrate\r\n\r\n", bus.name)))?;
 
     for (i, (bitrate, label)) in BITRATES.iter().enumerate() {
-        if i == cursor {
-            queue!(stdout, SetForegroundColor(Color::Cyan), Print("  \u{25ba} "), ResetColor)?;
-        } else {
-            queue!(stdout, Print("    "))?;
-        }
+        let selected = i == cursor;
+        let is_current = bus.bitrate == Some(*bitrate);
 
-        if bus.bitrate == Some(*bitrate) {
+        if selected {
+            queue!(stdout, SetForegroundColor(Color::Cyan), Print("  \u{25ba} "))?;
+            queue!(stdout, Print(label))?;
+        } else if is_current {
+            queue!(stdout, ResetColor, Print("    "))?;
             queue!(stdout, SetForegroundColor(Color::Green), Print(*label), ResetColor)?;
         } else {
+            queue!(stdout, ResetColor, Print("    "))?;
             queue!(stdout, Print(*label))?;
         }
 
-        queue!(stdout, Print("\r\n"))?;
+        queue!(stdout, ResetColor, Print("\r\n"))?;
     }
 
+    queue!(stdout, Print(SEP))?;
     queue!(
         stdout,
-        Print("\r\n"),
         SetForegroundColor(Color::DarkGrey),
         Print("  \u{2191}/\u{2193} navigate   Enter apply   \u{2190}/Esc back\r\n"),
         ResetColor,
