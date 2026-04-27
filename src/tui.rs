@@ -196,7 +196,7 @@ fn draw(
         SetForegroundColor(Color::Rgb { r: 255, g: 102, b: 0 }),
         Print(concat!("  GOcontroll Moduline CAN tool  v", env!("CARGO_PKG_VERSION"), "\r\n")),
         ResetColor,
-        Print(format!("  Baseboard: {}\r\n\r\n", baseboard)),
+        Print(format!("  Controller: Moduline {}\r\n\r\n", baseboard)),
     )?;
 
     match mode {
