@@ -25,7 +25,6 @@ fn main() {
     std::process::exit(match result {
         Ok(()) => 0,
         Err(e) => {
-            // Errors go to stderr; --json output went to stdout already (or nothing).
             eprintln!("error: {e}");
             e.exit_code()
         }
@@ -37,24 +36,27 @@ fn run(cli: Cli) -> Result<(), Error> {
     let quiet = cli.quiet;
 
     match cli.command {
-        Command::List => {
+        None => {
+            tui::run()?;
+        }
+        Some(Command::List) => {
             let snapshot = output::Snapshot::collect()?;
             output::print_list(&snapshot, json)?;
         }
-        Command::Show { iface } => {
+        Some(Command::Show { iface }) => {
             let info = output::IfaceInfo::collect(&iface)?;
             output::print_show(&info, json)?;
         }
-        Command::Set { iface, key, value } => {
+        Some(Command::Set { iface, key, value }) => {
             cli::handle_set(&iface, &key, &value, quiet)?;
         }
-        Command::Apply { iface } => {
+        Some(Command::Apply { iface }) => {
             cli::handle_apply(&iface, quiet)?;
         }
-        Command::Defaults { auto_detect, baseboard } => {
+        Some(Command::Defaults { auto_detect, baseboard }) => {
             cli::handle_defaults(auto_detect, baseboard.as_deref(), json, quiet)?;
         }
-        Command::DetectBaseboard => {
+        Some(Command::DetectBaseboard) => {
             let bb = baseboard::detect()?;
             if json {
                 let j = serde_json::json!({
@@ -66,11 +68,8 @@ fn run(cli: Cli) -> Result<(), Error> {
                 println!("{}", bb.as_str());
             }
         }
-        Command::Reset { iface } => {
+        Some(Command::Reset { iface }) => {
             cli::handle_reset(&iface, quiet)?;
-        }
-        Command::Tui => {
-            tui::run()?;
         }
     }
     Ok(())

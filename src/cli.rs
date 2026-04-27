@@ -9,11 +9,13 @@ use crate::error::Error;
 use crate::netlink;
 
 /// GOcontroll CAN interface configuration tool.
+///
+/// Run without arguments to open the interactive TUI.
 #[derive(Parser, Debug)]
 #[command(name = "go-can", version, about, long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 
     /// Machine-readable JSON output (schema_version=1).
     #[arg(long, global = true)]
@@ -72,8 +74,6 @@ pub enum Command {
         iface: String,
     },
 
-    /// Interactive TUI — browse and configure CAN interfaces with arrow keys.
-    Tui,
 }
 
 pub fn handle_set(iface: &str, key: &str, value: &str, quiet: bool) -> Result<(), Error> {

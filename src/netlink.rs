@@ -46,6 +46,7 @@ pub fn apply(iface: &str, cfg: &CanConfig) -> Result<(), Error> {
     args.push(if cfg.loopback { "on".into() } else { "off".into() });
     args.push("listen-only".into());
     args.push(if cfg.listen_only { "on".into() } else { "off".into() });
+    // Only pass 'fd on' when enabling CAN-FD; classic-only controllers reject 'fd off'.
     if cfg.fd {
         args.push("fd".into());
         args.push("on".into());
@@ -53,9 +54,6 @@ pub fn apply(iface: &str, cfg: &CanConfig) -> Result<(), Error> {
             args.push("dbitrate".into());
             args.push(dbr.to_string());
         }
-    } else {
-        args.push("fd".into());
-        args.push("off".into());
     }
     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     run_ip(&arg_refs)?;
