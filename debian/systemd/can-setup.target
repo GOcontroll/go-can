@@ -1,9 +1,10 @@
 [Unit]
 Description=All GOcontroll CAN interfaces configured and up
-# Wants= a fixed superset (can0..can3). Non-existent ones are no-ops via
-# ConditionPathExists= in the can@.service template — M1/HMI1 (2× CAN)
-# simply won't have can2/can3 conf files, so those instance services skip.
-Wants=can@can0.service can@can1.service can@can2.service can@can3.service
+# Activation is udev-driven: 90-gocontroll-can.rules starts can@.service
+# instances when CAN netdevs appear. No static Wants= needed — devices
+# that don't exist on a given baseboard are never started, avoiding
+# device-unit timeouts on M1/HMI1 (2× CAN) where can2/can3 are absent.
+After=can@can0.service can@can1.service can@can2.service can@can3.service
 
 [Install]
 WantedBy=multi-user.target

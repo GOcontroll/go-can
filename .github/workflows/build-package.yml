@@ -50,6 +50,7 @@ jobs:
           mkdir -p "${BUILD}/DEBIAN" \
                    "${BUILD}/usr/bin" \
                    "${BUILD}/usr/lib/systemd/system" \
+                   "${BUILD}/usr/lib/udev/rules.d" \
                    "${BUILD}/etc/gocontroll/can.d" \
                    "${DIST}"
 
@@ -60,6 +61,8 @@ jobs:
             "${BUILD}/usr/lib/systemd/system/can@.service"
           install -Dm644 debian/systemd/can-setup.target \
             "${BUILD}/usr/lib/systemd/system/can-setup.target"
+          install -Dm644 debian/udev/90-gocontroll-can.rules \
+            "${BUILD}/usr/lib/udev/rules.d/90-gocontroll-can.rules"
 
           # /etc/gocontroll/can.d/ stays empty at install time;
           # firstboot-baseboard.service writes per-baseboard defaults at first boot.

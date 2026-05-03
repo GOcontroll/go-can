@@ -1,0 +1,4 @@
+# Start can@.service for each CAN netdev the kernel creates.
+# Only interfaces with a config in /etc/gocontroll/can.d/ will actually
+# apply settings (ConditionPathExists in can@.service).
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="can[0-9]*", TAG+="systemd", ENV{SYSTEMD_WANTS}+="can@%k.service"
