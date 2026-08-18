@@ -14,6 +14,10 @@ use crate::error::Error;
 const NET_SYSFS: &str = "/sys/class/net";
 const SCHEMA_VERSION: u32 = 1;
 
+/// Interface-name prefix used for CAN buses on a Multibus module. The module
+/// presents mb_can1..mb_can3, numbered as the knowledge base numbers the buses.
+pub const MODULE_CAN_PREFIX: &str = "mb_can";
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Snapshot {
     pub schema_version: u32,
@@ -175,6 +179,22 @@ fn on_off(b: bool) -> &'static str {
     if b { "on" } else { "off" }
 }
 
+/// True for a name of the form `<prefix>N` with at least one decimal digit.
+fn is_numbered(name: &str, prefix: &str) -> bool {
+    match name.strip_prefix(prefix) {
+        Some(rest) => !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()),
+        None => false,
+    }
+}
+
+/// True for a CAN interface that belongs to a Multibus module rather than to
+/// the baseboard. These are named by 81-gocontroll-multibus.rules; without that
+/// udev rule the kernel names them canN in discovery order and they are
+/// indistinguishable from baseboard interfaces here.
+pub fn is_module_can(name: &str) -> bool {
+    is_numbered(name, MODULE_CAN_PREFIX)
+}
+
 fn list_can_devices() -> Result<Vec<String>, Error> {
     let mut out = Vec::new();
     let dir = Path::new(NET_SYSFS);
@@ -185,11 +205,13 @@ fn list_can_devices() -> Result<Vec<String>, Error> {
         let entry = entry?;
         let name = entry.file_name();
         let s = name.to_string_lossy();
-        // Match canN where N is decimal.
-        if s.starts_with("can") && s[3..].chars().all(|c| c.is_ascii_digit()) && s.len() > 3 {
+        // Baseboard interfaces are canN; Multibus module interfaces are mb_canN.
+        if is_numbered(&s, "can") || is_numbered(&s, MODULE_CAN_PREFIX) {
             out.push(s.to_string());
         }
     }
+    // Lexicographic order puts the baseboard interfaces first and the module
+    // ones after them, which is the order they are worth reading in.
     out.sort();
     Ok(out)
 }

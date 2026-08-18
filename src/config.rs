@@ -161,9 +161,20 @@ pub fn load(iface: &str) -> Result<CanConfig, Error> {
     CanConfig::from_conf_string(&s)
 }
 
-/// Load existing config or return default if none on disk.
+/// Load existing config, or the right starting point for a new one.
+///
+/// The starting point is interface-specific: a Multibus module speaks gs_usb,
+/// which rejects two of the plain defaults outright, so seeding a new config
+/// from CanConfig::default() there would make the very first `set` fail to
+/// apply. crate::defaults knows which template belongs to which interface.
 pub fn load_or_default(iface: &str) -> CanConfig {
-    load(iface).unwrap_or_default()
+    if let Ok(cfg) = load(iface) {
+        return cfg;
+    }
+    crate::baseboard::detect()
+        .ok()
+        .and_then(|bb| crate::defaults::config_for(bb, iface))
+        .unwrap_or_default()
 }
 
 pub fn save(iface: &str, cfg: &CanConfig) -> Result<(), Error> {
