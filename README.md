@@ -108,7 +108,8 @@ cargo build --release
 
 The `.deb` is built by GitHub Actions on `v*` tag push (see
 `.github/workflows/build-package.yml`). Releases are auto-published to
-[`apt.gocontroll.com`](https://apt.gocontroll.com).
+the GOcontroll apt repository (`apt.gocontroll.tech`, with `apt.gocontroll.com`
+as fallback; both serve the same bucket).
 
 ## License
 
