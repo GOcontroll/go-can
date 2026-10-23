@@ -14,8 +14,11 @@ use crate::error::Error;
 const NET_SYSFS: &str = "/sys/class/net";
 const SCHEMA_VERSION: u32 = 1;
 
-/// Interface-name prefix used for CAN buses on a Multibus module. The module
-/// presents mb_can1..mb_can3, numbered as the knowledge base numbers the buses.
+/// Interface-name prefix used for CAN buses on a Multibus module. A lone
+/// module presents mb_can1..mb_can3, numbered as the knowledge base numbers the
+/// buses. With more than one module go-multibus names them per slot instead -
+/// mb7_can1 is CAN 1 of the module in slot 7 - because two modules would
+/// otherwise both claim mb_can1; see [`is_module_can`].
 pub const MODULE_CAN_PREFIX: &str = "mb_can";
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -192,7 +195,19 @@ fn is_numbered(name: &str, prefix: &str) -> bool {
 /// udev rule the kernel names them canN in discovery order and they are
 /// indistinguishable from baseboard interfaces here.
 pub fn is_module_can(name: &str) -> bool {
-    is_numbered(name, MODULE_CAN_PREFIX)
+    if is_numbered(name, MODULE_CAN_PREFIX) {
+        return true;
+    }
+
+    // mb<slot>_can<N>, as named when several modules share the controller.
+    let Some(rest) = name.strip_prefix("mb") else {
+        return false;
+    };
+    let Some((slot, bus)) = rest.split_once("_can") else {
+        return false;
+    };
+    let digits = |part: &str| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit());
+    digits(slot) && digits(bus)
 }
 
 fn list_can_devices() -> Result<Vec<String>, Error> {
@@ -205,8 +220,9 @@ fn list_can_devices() -> Result<Vec<String>, Error> {
         let entry = entry?;
         let name = entry.file_name();
         let s = name.to_string_lossy();
-        // Baseboard interfaces are canN; Multibus module interfaces are mb_canN.
-        if is_numbered(&s, "can") || is_numbered(&s, MODULE_CAN_PREFIX) {
+        // Baseboard interfaces are canN; Multibus module interfaces are mb_canN,
+        // or mb<slot>_canN when there is more than one module.
+        if is_numbered(&s, "can") || is_module_can(&s) {
             out.push(s.to_string());
         }
     }
@@ -237,4 +253,24 @@ fn read_sysfs_str(iface: &str, file: &str) -> Option<String> {
 
 fn read_sysfs_uint(iface: &str, file: &str) -> Option<u32> {
     read_sysfs_str(iface, file).and_then(|s| s.parse().ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn module_can_names_are_recognised_in_both_forms() {
+        assert!(is_module_can("mb_can1"));
+        assert!(is_module_can("mb_can3"));
+        assert!(is_module_can("mb7_can1"));
+        assert!(is_module_can("mb8_can3"));
+    }
+
+    #[test]
+    fn other_names_are_not_module_buses() {
+        for name in ["can0", "can12", "mb_can", "mb7_can", "mb_canX", "mbx_can1", "mb7can1", "vcan0", "mb7_can1a"] {
+            assert!(!is_module_can(name), "{name}");
+        }
+    }
 }
