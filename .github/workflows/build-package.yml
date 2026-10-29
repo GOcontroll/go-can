@@ -93,7 +93,12 @@ jobs:
           case "$1" in
               configure)
                   systemctl daemon-reload
-                  systemctl enable can-setup.target || true
+                  # Enable on a first install only ($2, the previously
+                  # configured version, is empty). On an upgrade the target
+                  # keeps the state it had: disabled stays disabled.
+                  if [ -z "$2" ]; then
+                      systemctl enable can-setup.target || true
+                  fi
                   # Don't auto-start: chroot at install time has no kernel CAN devices,
                   # and on real hardware firstboot-baseboard.service starts it.
                   ;;
@@ -107,8 +112,9 @@ jobs:
           set -e
           case "$1" in
               remove|purge)
+                  # Stop only. The enable links stay until purge, so a
+                  # reinstall after a remove comes back in the same state.
                   systemctl stop can-setup.target || true
-                  systemctl disable can-setup.target || true
                   for i in 0 1 2 3; do
                       systemctl stop "can@can${i}.service" || true
                   done
@@ -124,6 +130,8 @@ jobs:
           case "$1" in
               purge)
                   rm -rf /etc/gocontroll/can.d
+                  find /etc/systemd/system -type l -path '*.wants/*' \
+                      -name can-setup.target -delete 2>/dev/null || true
                   systemctl daemon-reload || true
                   ;;
           esac
