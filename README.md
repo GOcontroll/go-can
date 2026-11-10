@@ -24,6 +24,7 @@ go-can defaults --auto-detect            # firstboot: per-baseboard defaults
 go-can defaults --baseboard L4           # force a specific baseboard
 go-can detect-baseboard                  # → "L4" / "M1" / "HMI1" / "unknown"
 go-can reset can0                        # restore baseboard defaults
+go-can migrate [--dry-run]               # take over a legacy can.conf (see below)
 
 # Globale flags:
 --json                                   # machine-readable (schema_version=1)
@@ -52,6 +53,36 @@ SAMPLE_POINT=
 
 Empty value = kernel default. One file per interface — modular and
 fleet-rsync-friendly. Edits survive package upgrades.
+
+## Migrating from can.conf (older images)
+
+Images up to 2026-04-26 set up the CAN buses with ifupdown, from
+`/etc/network/interfaces.d/can.conf`. With go-can installed next to it, both
+bring the same buses up at boot, and which settings a bus then gets is
+unpredictable. From 0.1.13 the package's `postinst` runs `go-can migrate`
+whenever that file exists, on a first install and on an upgrade:
+
+- The settings of every bus that ifupdown brings up at boot (`auto` or
+  `allow-hotplug`) are written to `/etc/gocontroll/can.d/<iface>.conf`. They
+  are taken over literally; what can.conf leaves out gets the kernel default
+  (txqueuelen, which go-can always sets, gets go-can's 20).
+- A bus that already has a go-can config keeps it; go-can reports when can.conf
+  differs. A bus without `auto` gets no config, so it stays down, as before.
+- can.conf is moved to `/etc/gocontroll/can.conf.migrated` (`.1`, `.2`, … when
+  that exists). It has to leave `interfaces.d`: ifupdown sources that directory
+  with a wildcard, so a renamed copy there would still run.
+- The running buses are not touched. From the next boot `can@.service` sets
+  them up, with the settings they run with now.
+- **All or nothing.** When can.conf holds anything go-can cannot express — an
+  interface that is not `canN`, an ifupdown option other than the `ip link set
+  $IFACE …` and `up`/`down` lines, or a CAN parameter outside `bitrate`,
+  `dbitrate`, `sample-point`, `restart-ms`, `triple-sampling`, `loopback`,
+  `listen-only` and `fd` — nothing is changed, the install still succeeds, and
+  go-can says which line stopped it. Then apply the bitrate of every bus with
+  go-can and remove can.conf by hand.
+
+`go-can migrate --dry-run` shows what would happen without changing anything;
+`--from <file>` reads another file. A missing file is not an error (exit 0).
 
 ## Per-baseboard defaults
 

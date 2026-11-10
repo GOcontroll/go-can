@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
-const CONFIG_DIR: &str = "/etc/gocontroll/can.d";
+pub const CONFIG_DIR: &str = "/etc/gocontroll/can.d";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CanConfig {
@@ -178,9 +178,15 @@ pub fn load_or_default(iface: &str) -> CanConfig {
 }
 
 pub fn save(iface: &str, cfg: &CanConfig) -> Result<(), Error> {
-    fs::create_dir_all(CONFIG_DIR)?;
-    let p = config_path(iface);
-    let mut tmp = tempfile_in(CONFIG_DIR, &format!("{iface}.conf."))?;
+    save_in(Path::new(CONFIG_DIR), iface, cfg)
+}
+
+/// `save` into another directory than /etc/gocontroll/can.d (the migration
+/// writes through this, so its tests can use a scratch directory).
+pub fn save_in(dir: &Path, iface: &str, cfg: &CanConfig) -> Result<(), Error> {
+    fs::create_dir_all(dir)?;
+    let p = dir.join(format!("{iface}.conf"));
+    let mut tmp = tempfile_in(dir, &format!("{iface}.conf."))?;
     tmp.write_all(cfg.to_conf_string(iface).as_bytes())?;
     tmp.flush()?;
     let tmp_path = tmp.into_path();
@@ -260,13 +266,13 @@ impl Drop for TempFile {
     }
 }
 
-fn tempfile_in(dir: &str, prefix: &str) -> Result<TempFile, Error> {
+fn tempfile_in(dir: &Path, prefix: &str) -> Result<TempFile, Error> {
     use std::time::{SystemTime, UNIX_EPOCH};
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    let path = Path::new(dir).join(format!("{prefix}{nanos}.tmp"));
+    let path = dir.join(format!("{prefix}{nanos}.tmp"));
     let file = fs::OpenOptions::new()
         .create_new(true)
         .write(true)

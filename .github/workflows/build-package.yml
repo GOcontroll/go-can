@@ -101,6 +101,17 @@ jobs:
                   fi
                   # Don't auto-start: chroot at install time has no kernel CAN devices,
                   # and on real hardware firstboot-baseboard.service starts it.
+                  #
+                  # Older images set up the CAN buses with ifupdown, from
+                  # /etc/network/interfaces.d/can.conf. Next to go-can both would
+                  # bring the same buses up at boot, with unpredictable settings.
+                  # Take the settings over into /etc/gocontroll/can.d/ and move
+                  # can.conf aside (go-can migrate). The running buses are not
+                  # touched. Never fails the install: a can.conf that go-can
+                  # cannot express is left as it is, and go-can says why.
+                  if [ -f /etc/network/interfaces.d/can.conf ]; then
+                      /usr/bin/go-can migrate || true
+                  fi
                   ;;
           esac
           POSTINST

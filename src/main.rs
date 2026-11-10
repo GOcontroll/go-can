@@ -12,6 +12,7 @@ mod cli;
 mod config;
 mod defaults;
 mod error;
+mod legacy;
 mod netlink;
 mod output;
 mod tui;
@@ -70,6 +71,9 @@ fn run(cli: Cli) -> Result<(), Error> {
         }
         Some(Command::Reset { iface }) => {
             cli::handle_reset(&iface, quiet)?;
+        }
+        Some(Command::Migrate { from, dry_run }) => {
+            cli::handle_migrate(&from, dry_run, json, quiet)?;
         }
     }
     Ok(())
