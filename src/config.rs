@@ -13,6 +13,11 @@ use crate::error::Error;
 
 pub const CONFIG_DIR: &str = "/etc/gocontroll/can.d";
 
+/// Data-phase bitrate a bus gets when CAN FD is switched on and none was ever
+/// chosen. The kernel refuses `fd on` without one, so there has to be a value;
+/// 2 Mbit/s is what every CAN FD transceiver and controller in use here does.
+pub const DEFAULT_DATA_BITRATE: u32 = 2_000_000;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CanConfig {
     pub bitrate: u32,
@@ -59,7 +64,14 @@ impl CanConfig {
                     Some(parse_uint(value, "data-bitrate")?)
                 };
             }
-            "fd" => self.fd = parse_bool(value, "fd")?,
+            "fd" => {
+                self.fd = parse_bool(value, "fd")?;
+                // Stored, not just assumed at apply time, so that `show` and
+                // the file say what the bus actually runs at.
+                if self.fd && self.data_bitrate.is_none() {
+                    self.data_bitrate = Some(DEFAULT_DATA_BITRATE);
+                }
+            }
             "restart_ms" => self.restart_ms = parse_uint(value, "restart-ms")?,
             "txqueuelen" => self.txqueuelen = parse_uint(value, "txqueuelen")?,
             "sample_point" => {
@@ -167,14 +179,31 @@ pub fn load(iface: &str) -> Result<CanConfig, Error> {
 /// which rejects two of the plain defaults outright, so seeding a new config
 /// from CanConfig::default() there would make the very first `set` fail to
 /// apply. crate::defaults knows which template belongs to which interface.
+///
+/// CAN FD is taken from the interface as it runs. A bus without a config can
+/// still be in FD - go-multibus raises a module bus that way when its mode is
+/// `canfd` - and the first `set bitrate` on it must not quietly turn it into
+/// a classic bus.
 pub fn load_or_default(iface: &str) -> CanConfig {
     if let Ok(cfg) = load(iface) {
         return cfg;
     }
-    crate::baseboard::detect()
+    let mut cfg = crate::baseboard::detect()
         .ok()
         .and_then(|bb| crate::defaults::config_for(bb, iface))
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if let Some(caps) = crate::netlink::link_caps(iface) {
+        adopt_live_fd(&mut cfg, &caps);
+    }
+    cfg
+}
+
+/// Start a new config in CAN FD when the interface is, at its data bitrate.
+fn adopt_live_fd(cfg: &mut CanConfig, caps: &crate::netlink::LinkCaps) {
+    if caps.fd_active {
+        cfg.fd = true;
+        cfg.data_bitrate = Some(caps.data_bitrate.unwrap_or(DEFAULT_DATA_BITRATE));
+    }
 }
 
 pub fn save(iface: &str, cfg: &CanConfig) -> Result<(), Error> {
@@ -281,4 +310,54 @@ fn tempfile_in(dir: &Path, prefix: &str) -> Result<TempFile, Error> {
         path,
         file: Some(file),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn switching_fd_on_gives_a_bus_a_data_bitrate() {
+        let mut cfg = CanConfig::default();
+        cfg.set_key("fd", "on").unwrap();
+        assert_eq!(cfg.data_bitrate, Some(DEFAULT_DATA_BITRATE));
+
+        // One that was chosen is kept, also over fd off and on again.
+        cfg.set_key("data-bitrate", "5000000").unwrap();
+        cfg.set_key("fd", "off").unwrap();
+        cfg.set_key("fd", "on").unwrap();
+        assert_eq!(cfg.data_bitrate, Some(5_000_000));
+    }
+
+    #[test]
+    fn a_new_config_starts_in_fd_when_the_interface_runs_fd() {
+        use crate::netlink::LinkCaps;
+
+        let mut cfg = CanConfig::default();
+        let live = LinkCaps {
+            fd: true,
+            fd_active: true,
+            data_bitrate: Some(5_000_000),
+            ..LinkCaps::default()
+        };
+        adopt_live_fd(&mut cfg, &live);
+        assert!(cfg.fd);
+        assert_eq!(cfg.data_bitrate, Some(5_000_000));
+
+        // A classic bus, FD capable or not, starts classic.
+        let mut cfg = CanConfig::default();
+        adopt_live_fd(&mut cfg, &LinkCaps { fd: true, ..LinkCaps::default() });
+        assert!(!cfg.fd);
+        assert_eq!(cfg.data_bitrate, None);
+    }
+
+    #[test]
+    fn a_config_survives_being_written_and_read_back() {
+        let mut cfg = CanConfig::default();
+        cfg.set_key("bitrate", "500000").unwrap();
+        cfg.set_key("fd", "on").unwrap();
+        cfg.set_key("data-bitrate", "2000000").unwrap();
+        let back = CanConfig::from_conf_string(&cfg.to_conf_string("mb_can1")).unwrap();
+        assert_eq!(back, cfg);
+    }
 }

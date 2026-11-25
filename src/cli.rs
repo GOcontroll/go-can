@@ -101,6 +101,16 @@ pub fn handle_set(iface: &str, key: &str, value: &str, quiet: bool) -> Result<()
     netlink::apply(iface, &cfg)?;
     if !quiet {
         eprintln!("[go-can] {iface}: applied live");
+        if key == "fd" && crate::output::is_module_can(iface) {
+            // Classic or FD is part of the interface mode of a Multibus
+            // module, and go-multibus sets it again whenever the module comes
+            // up. Say so, or the change looks lost after the next boot.
+            eprintln!(
+                "[go-can] note: {iface} is a Multibus bus. go-multibus decides CAN or CAN FD \
+                 for it and sets that again when the module comes up; make it lasting with \
+                 'go-multibus set <interface> can|canfd'"
+            );
+        }
     }
     Ok(())
 }

@@ -1,4 +1,4 @@
-# go-can
+﻿# go-can
 
 GOcontroll CAN interface configuration tool for Moduline controllers
 (L4, M1, HMI1) running on i.MX8MM hardware.
@@ -19,10 +19,11 @@ go-can show can0                         # config + live state of one iface
 go-can set can0 bitrate 500000           # edit conf + apply live
 go-can set can0 fd on                    # enable CAN-FD (HMI1)
 go-can set can0 data-bitrate 1000000     # FD data-phase bitrate
+go-can set mb_can1 data-bitrate 2000000  # the same on a Multibus module bus
 go-can apply can0                        # systemd entry: read conf, apply
 go-can defaults --auto-detect            # firstboot: per-baseboard defaults
 go-can defaults --baseboard L4           # force a specific baseboard
-go-can detect-baseboard                  # → "L4" / "M1" / "HMI1" / "unknown"
+go-can detect-baseboard                  # â†’ "L4" / "M1" / "HMI1" / "unknown"
 go-can reset can0                        # restore baseboard defaults
 go-can migrate [--dry-run]               # take over a legacy can.conf (see below)
 
@@ -34,12 +35,44 @@ go-can migrate [--dry-run]               # take over a legacy can.conf (see belo
 `set` keys: `bitrate`, `data-bitrate`, `fd`, `restart-ms`, `txqueuelen`,
 `sample-point`, `triple-sampling`, `loopback`, `listen-only`.
 
+## CAN FD and the two bitrates
+
+A CAN FD bus has two bitrates: `bitrate` for the arbitration phase and for
+classic frames, and `data-bitrate` for the data phase of an FD frame.
+
+- `fd on` without a data bitrate stores 2 Mbit/s (`DATA_BITRATE=2000000`), since
+  the kernel refuses CAN FD without one. A data bitrate that was chosen before
+  is kept.
+- `fd off` really switches the interface back to classic CAN. A network
+  interface keeps CAN FD over a down and an up, so up to 0.1.13, which simply
+  left `fd` out, a bus stayed in FD until the controller was rebooted.
+- The data bitrate may not be below the bitrate; the kernel refuses the pair.
+- A bus without a config file that already runs CAN FD - a Multibus bus raised by
+  go-multibus in mode `canfd` - keeps FD and its data bitrate when its first
+  config is written, so a first `set bitrate` does not turn it into a classic bus.
+
+The UI (`go-can` without arguments) lists every bus with its bitrate and, for a
+CAN FD bus, its data bitrate. Enter on a classic-only bus opens the bitrate
+picker (125, 250, 500, 1000 kbit/s). Enter on a bus whose controller does
+CAN FD opens its settings: `Bitrate`, `CAN FD` and, with FD on, `Data bitrate`.
+The data bitrate picker lists 500 kbit/s to 8 Mbit/s, less whatever is below
+the bitrate or the controller cannot make exactly from its clock - the kernel
+would settle for a rate a few percent off, which a CAN FD data phase does not
+forgive. A Multibus module (170 MHz) gets 500, 1000, 2000 and 5000 kbit/s.
+
+**Multibus module buses** (`mb_can1`, `mb7_can1`): whether such a bus is classic
+CAN or CAN FD is its interface mode and is chosen in go-multibus
+(`go-multibus set 1 canfd`), which sets go-can's `FD` line to match whenever the
+module comes up. The UI shows `CAN FD` there as `chosen in go-multibus`;
+`go-can set mb_can1 fd on` works until the next bring-up and says so. The
+bitrates of a module bus are set here like any other.
+
 ## Config files
 
 `/etc/gocontroll/can.d/<iface>.conf`, KEY=VALUE shell-sourceable:
 
 ```sh
-# /etc/gocontroll/can.d/can0.conf — managed by go-can
+# /etc/gocontroll/can.d/can0.conf â€” managed by go-can
 BITRATE=250000
 TRIPLE_SAMPLING=on
 RESTART_MS=100
@@ -51,7 +84,7 @@ DATA_BITRATE=
 SAMPLE_POINT=
 ```
 
-Empty value = kernel default. One file per interface — modular and
+Empty value = kernel default. One file per interface â€” modular and
 fleet-rsync-friendly. Edits survive package upgrades.
 
 ## Migrating from can.conf (older images)
@@ -68,16 +101,16 @@ whenever that file exists, on a first install and on an upgrade:
   (txqueuelen, which go-can always sets, gets go-can's 20).
 - A bus that already has a go-can config keeps it; go-can reports when can.conf
   differs. A bus without `auto` gets no config, so it stays down, as before.
-- can.conf is moved to `/etc/gocontroll/can.conf.migrated` (`.1`, `.2`, … when
+- can.conf is moved to `/etc/gocontroll/can.conf.migrated` (`.1`, `.2`, â€¦ when
   that exists). It has to leave `interfaces.d`: ifupdown sources that directory
   with a wildcard, so a renamed copy there would still run.
 - The running buses are not touched. From the next boot `can@.service` sets
   them up, with the settings they run with now.
-- **All or nothing.** When can.conf holds anything go-can cannot express — an
+- **All or nothing.** When can.conf holds anything go-can cannot express â€” an
   interface that is not `canN`, an ifupdown option other than the `ip link set
-  $IFACE …` and `up`/`down` lines, or a CAN parameter outside `bitrate`,
+  $IFACE â€¦` and `up`/`down` lines, or a CAN parameter outside `bitrate`,
   `dbitrate`, `sample-point`, `restart-ms`, `triple-sampling`, `loopback`,
-  `listen-only` and `fd` — nothing is changed, the install still succeeds, and
+  `listen-only` and `fd` â€” nothing is changed, the install still succeeds, and
   go-can says which line stopped it. Then apply the bitrate of every bus with
   go-can and remove can.conf by hand.
 
